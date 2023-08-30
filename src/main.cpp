@@ -6,54 +6,38 @@
 
 using namespace std;
 
-class MMM : public olc::PixelGameEngine
+// g++ -o main main.cpp -lX11 -lGL -lpthread -lpng -lstdc++fs -std=c++17
+
+enum
 {
-private:
+    CELL_PATH_NORTH = 0x01,
+    CELL_PATH_EAST = 0x02,
+    CELL_PATH_SOUTH = 0x04,
+    CELL_PATH_WEST = 0x08,
+    CELL_VISITED = 0x10
+};
+
+struct maze
+{
     int m_nMazeWidth;
     int m_nMazeHeight;
-    int *m_maze;
+    int *m_nMaze;
 
-    int m_nPathWidth;
-
-    enum
+    void GenerateMaze(int m_nMazeWidth, int m_nMazeHeight)
     {
-        CELL_PATH_NORTH = 0x01,
-        CELL_PATH_EAST = 0x02,
-        CELL_PATH_SOUTH = 0x04,
-        CELL_PATH_WEST = 0x08,
-        CELL_VISITED = 0x10
-    };
 
-    int m_nVisitedCells = 0;
+        this->m_nMazeWidth = m_nMazeWidth;
+        this->m_nMazeHeight = m_nMazeWidth;
+        m_nMaze = new int[m_nMazeWidth * m_nMazeHeight];
 
-    stack<pair<int, int>> m_stack;
+        memset(m_nMaze, 0x00, m_nMazeWidth * m_nMazeHeight * sizeof(int));
 
-public:
-    MMM()
-    {
-        sAppName = "Memory Maze Man!";
-    }
-
-protected:
-    bool OnUserCreate() override
-    {
-        m_nMazeWidth = 32;
-        m_nMazeHeight = 32;
-        m_maze = new int[m_nMazeWidth * m_nMazeHeight];
-
-        memset(m_maze, 0x00, m_nMazeWidth * m_nMazeHeight * sizeof(int));
-
+        stack<pair<int, int>> m_stack;
         m_stack.push(make_pair(0, 0));
-        m_maze[0] = CELL_VISITED;
-        m_nVisitedCells = 1;
 
-        m_nPathWidth = 7;
+        m_nMaze[0] = CELL_VISITED;
+        int m_nVisitedCells = 1;
 
-        return true;
-    }
-
-    bool OnUserUpdate(float fElapsedTime) override
-    {
         // Do maze algorithm
 
         auto offset = [&](int x, int y)
@@ -61,26 +45,26 @@ protected:
             return (m_stack.top().second + y) * m_nMazeWidth + m_stack.top().first + x;
         };
 
-        if (m_nVisitedCells < m_nMazeHeight * m_nMazeWidth)
+        while (m_nVisitedCells < m_nMazeHeight * m_nMazeWidth)
         {
 
             // Create a set of the unvisited neighbours
             vector<int> neighbours;
 
             // North neighbour
-            if (m_stack.top().second > 0 && (m_maze[offset(0, -1)] & CELL_VISITED) == 0)
+            if (m_stack.top().second > 0 && (m_nMaze[offset(0, -1)] & CELL_VISITED) == 0)
                 neighbours.push_back(0);
 
             // East neighbour
-            if (m_stack.top().first < m_nMazeWidth - 1 && (m_maze[offset(1, 0)] & CELL_VISITED) == 0)
+            if (m_stack.top().first < m_nMazeWidth - 1 && (m_nMaze[offset(1, 0)] & CELL_VISITED) == 0)
                 neighbours.push_back(1);
 
             // South neighbour
-            if (m_stack.top().second < m_nMazeHeight - 1 && (m_maze[offset(0, 1)] & CELL_VISITED) == 0)
+            if (m_stack.top().second < m_nMazeHeight - 1 && (m_nMaze[offset(0, 1)] & CELL_VISITED) == 0)
                 neighbours.push_back(2);
 
             // West neighbour
-            if (m_stack.top().first > 0 && (m_maze[offset(-1, 0)] & CELL_VISITED) == 0)
+            if (m_stack.top().first > 0 && (m_nMaze[offset(-1, 0)] & CELL_VISITED) == 0)
                 neighbours.push_back(3);
 
             // Are there any neighbours available?
@@ -92,26 +76,26 @@ protected:
                 {
                     // North
                 case 0:
-                    m_maze[offset(0, 0)] |= CELL_PATH_NORTH;
-                    m_maze[offset(0, -1)] |= CELL_PATH_SOUTH | CELL_VISITED;
+                    m_nMaze[offset(0, 0)] |= CELL_PATH_NORTH;
+                    m_nMaze[offset(0, -1)] |= CELL_PATH_SOUTH | CELL_VISITED;
                     m_stack.push(make_pair((m_stack.top().first + 0), (m_stack.top().second + -1)));
                     break;
                     // East
                 case 1:
-                    m_maze[offset(0, 0)] |= CELL_PATH_EAST;
-                    m_maze[offset(+1, 0)] |= CELL_PATH_WEST | CELL_VISITED;
+                    m_nMaze[offset(0, 0)] |= CELL_PATH_EAST;
+                    m_nMaze[offset(+1, 0)] |= CELL_PATH_WEST | CELL_VISITED;
                     m_stack.push(make_pair((m_stack.top().first + 1), (m_stack.top().second + 0)));
                     break;
                     // South
                 case 2:
-                    m_maze[offset(0, 0)] |= CELL_PATH_SOUTH;
-                    m_maze[offset(0, +1)] |= CELL_PATH_NORTH | CELL_VISITED;
+                    m_nMaze[offset(0, 0)] |= CELL_PATH_SOUTH;
+                    m_nMaze[offset(0, +1)] |= CELL_PATH_NORTH | CELL_VISITED;
                     m_stack.push(make_pair((m_stack.top().first + 0), (m_stack.top().second + 1)));
                     break;
                     // West
                 case 3:
-                    m_maze[offset(0, 0)] |= CELL_PATH_WEST;
-                    m_maze[offset(-1, 0)] |= CELL_PATH_EAST | CELL_VISITED;
+                    m_nMaze[offset(0, 0)] |= CELL_PATH_WEST;
+                    m_nMaze[offset(-1, 0)] |= CELL_PATH_EAST | CELL_VISITED;
                     m_stack.push(make_pair((m_stack.top().first + -1), (m_stack.top().second + 0)));
                     break;
                 }
@@ -124,36 +108,200 @@ protected:
                 m_stack.pop();
             }
         }
+    }
+};
+
+struct vec2d
+{
+    float x = 0;
+    float y = 0;
+
+    vec2d operator + (const vec2d &rhs)
+    {
+        return {x + rhs.x, y + rhs.y};
+    }
+
+    vec2d operator - (const vec2d &rhs)
+    {
+        return {x - rhs.x, y - rhs.y};
+    }
+
+    void operator += (const vec2d &rhs)
+    {
+        x += rhs.x;
+        y += rhs.y;
+    }
+
+    void operator -= (const vec2d &rhs)
+    {
+        x -= rhs.x;
+        y -= rhs.y;
+    }
+
+    vec2d operator * (const float &rhs)
+    {
+        return {x * rhs, y * rhs};
+    }
+
+    vec2d operator / (const float &rhs)
+    {
+        return {x / rhs, y / rhs};
+    }
+
+    void operator *= (const float &rhs)
+    {
+        x *= rhs;
+        y *= rhs;
+    }
+
+    void operator /= (const float &rhs)
+    {
+        x /= rhs;
+        y /= rhs;
+    }
+
+    float GetLengthSqared()
+    {
+        return x * x + y * y;
+    }
+
+    float GetLength()
+    {
+        return sqrtf(GetLengthSqared());
+    }
+
+    float Normalize()
+    {
+        float reverseL = 1.0f / GetLength();
+        x *= reverseL;
+        y *= reverseL;
+    }
+
+    float DotProduct(const vec2d &rhs)
+    {
+        return x * rhs.x + y * rhs.y;
+    }
+
+    float CrossProduct(const vec2d &rhs)
+    {
+        return x * rhs.y - y * rhs.x;
+    }
+};
+
+struct player
+{
+    vec2d pos = {0, 0};
+    vec2d dir = {0, 0};
+    float radius = 1;
+    float speed = 8;
+
+    void Move(vec2d direction, maze maze, int m_nTileWidth, int m_nPathWidth, int m_nWallWidth,  float fElapsedTime)
+    {
+        direction.Normalize();
+        vec2d move = direction * speed * fElapsedTime;
+        vec2d nextPos = pos + move;
+
+        /*float reverseTileW = 1.0f / m_nTileWidth;
+
+        int m_pos_x = (int) (pos.x * reverseTileW);
+        int m_pos_y = (int) (pos.y * reverseTileW);
+        int m_next_x = (int) (nextPos.x * reverseTileW);
+        int m_next_y = (int) (nextPos.y * reverseTileW);*/
+
+        /*//CHECK FOR NORTH PATH
+        if (nextPos.y < m_nWallWidth) //next pos is in map
+        {
+            nextPos.y = (float)m_nWallWidth;
+        }
+        else if (pos.y > m_nTileWidth && // current pos has at least one north cell
+        m_pos_x != m_next_x && // they are in different cells by y
+        (maze.m_nMaze[m_pos_y * maze.m_nMazeWidth + m_pos_x] & CELL_PATH_EAST == 0)) // is there no path between them?
+        {
+            //HANDLE COLLISION
+            nextPos.y = m_pos_y * m_nTileWidth; // next y is at the top of current tile, just below the wall
+        }*/
+        pos.x = nextPos.x;
+        pos.y = nextPos.y;
+    }
+};
+
+class MMM : public olc::PixelGameEngine
+{
+private:
+    maze m_maze;
+    int m_nPathWidth;
+    int m_nTileWidth;
+    int m_nWallWidth;
+    player p;
+
+public:
+    MMM()
+    {
+        sAppName = "Memory Maze Man!";
+    }
+
+protected:
+    bool OnUserCreate() override
+    {
+        m_maze.GenerateMaze(32, 32);
+        m_nPathWidth = 7;
+        m_nWallWidth = 1;
+        m_nTileWidth = m_nPathWidth + m_nWallWidth;
+
+        p.pos = {100.0f, 100.0f};
+        p.radius = 5;
+
+        return true;
+    }
+
+    bool OnUserUpdate(float fElapsedTime) override
+    {
+        
+        // INPUT//
+        // TRANSLATION//
+        vec2d dir = {0, 0};
+        if (GetKey(olc::Key::W).bHeld)
+            dir.y -= 1.0f;
+        if (GetKey(olc::Key::S).bHeld)
+            dir.y += 1.0f;
+        if (GetKey(olc::Key::A).bHeld)
+            dir.x -= 1.0f;
+        if (GetKey(olc::Key::D).bHeld)
+            dir.x += 1.0f;
+        //////
+
+        p.Move(dir, m_maze, m_nTileWidth, m_nPathWidth, m_nWallWidth, fElapsedTime);
 
         // DRAWING//
         Clear(olc::BLACK);
 
-        for (int x = 0; x < m_nMazeWidth; x++)
+
+        //DRAW MAZE
+        /*for (int x = 0; x < m_maze.m_nMazeWidth; x++)
         {
-            for (int y = 0; y < m_nMazeHeight; y++)
+            for (int y = 0; y < m_maze.m_nMazeHeight; y++)
             {
                 for (int px = 0; px < m_nPathWidth; px++)
                     for (int py = 0; py < m_nPathWidth; py++)
-                        if (m_maze[x + y * m_nMazeWidth] & CELL_VISITED)
-                        {
-                            Draw(x * (m_nPathWidth + 1) + px, y * (m_nPathWidth + 1) + py, olc::WHITE);
-                        }
+                        if (m_maze.m_nMaze[x + y * m_maze.m_nMazeWidth] & CELL_VISITED)
+                            Draw(m_nWallWidth + x * (m_nPathWidth + 1) + px, m_nWallWidth + y * (m_nPathWidth + 1) + py, olc::WHITE);
                         else
-                        {
-                            Draw(x * (m_nPathWidth + 1) + px, y * (m_nPathWidth + 1) + py, olc::BLUE);
-                        }
+                            Draw(m_nWallWidth + x * (m_nPathWidth + 1) + px, m_nWallWidth + y * (m_nPathWidth + 1) + py, olc::BLUE);
 
                 // Draw passageways between cells
                 for (int p = 0; p < m_nPathWidth; p++)
                 {
-                    if (m_maze[y * m_nMazeWidth + x] & CELL_PATH_SOUTH)
-                        Draw(x * (m_nPathWidth + 1) + p, y * (m_nPathWidth + 1) + m_nPathWidth); // Draw South Passage
+                    if (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_PATH_SOUTH)
+                        Draw(m_nWallWidth + x * (m_nPathWidth + 1) + p, m_nWallWidth + y * (m_nPathWidth + 1) + m_nPathWidth); // Draw South Passage
 
-                    if (m_maze[y * m_nMazeWidth + x] & CELL_PATH_EAST)
-                        Draw(x * (m_nPathWidth + 1) + m_nPathWidth, y * (m_nPathWidth + 1) + p); // Draw East Passage
+                    if (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_PATH_EAST)
+                        Draw(m_nWallWidth + x * (m_nPathWidth + 1) + m_nPathWidth, m_nWallWidth + y * (m_nPathWidth + 1) + p); // Draw East Passage
                 }
             }
-        }
+        }*/
+
+        //DRAW PLAYER
+        FillCircle((int)p.pos.x, (int)p.pos.y, (int)p.radius, olc::RED);
 
         return true;
     }
@@ -162,7 +310,7 @@ protected:
 int main()
 {
     MMM demo;
-    if (demo.Construct(256, 256, 2, 2))
+    if (demo.Construct(257, 257, 2, 2))
         demo.Start();
 
     return 0;
