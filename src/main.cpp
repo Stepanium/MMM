@@ -220,6 +220,9 @@ struct player
     float visionRadius = 70.0f;
     float speed = 16.0f;
 
+    float counter = 0.0f;
+    float freezeTime = 1.0f; // in seconds
+
     olc::Pixel color;
     // olc::Pixel antiColor;
 
@@ -320,13 +323,18 @@ class MMM : public olc::PixelGameEngine
 {
 private:
     maze m_maze;
+    int m_nMazeWidth;
+    int m_nMazeHeight;
+
     int m_nPathWidth;
     int m_nTileWidth;
     int m_nWallWidth;
+
     player p_player;
 
     bool bLight = true;
     bool bExplore = true; //is gameplay right now in the explore mode or int the remember and find the exit mode?
+    bool bFreeze = false;
 
 
     void DrawMaze(maze m_maze, player p_player, bool bLight)
@@ -374,7 +382,9 @@ public:
 protected:
     bool OnUserCreate() override
     {
-        m_maze.GenerateMaze(17, 17);
+        m_nMazeWidth = 18;
+        m_nMazeHeight = 18;
+        m_maze.GenerateMaze(m_nMazeWidth, m_nMazeHeight);
         m_nPathWidth = 30;
         m_nWallWidth = 2;
         m_nTileWidth = m_nPathWidth + m_nWallWidth;
@@ -385,7 +395,7 @@ protected:
         m_maze.startColor = olc::GREEN;
         m_maze.finishColor = olc::RED;
 
-        p_player.pos = { (float)m_maze.m_nMazeWidth * m_nTileWidth * 0.5f, ((float)m_maze.m_nMazeWidth - 0.5f) * m_nTileWidth };
+        p_player.pos = { (float)(m_maze.m_nMazeWidth + 1) * 0.5f * m_nTileWidth, ((float)m_maze.m_nMazeWidth - 0.5f) * m_nTileWidth };
         p_player.radius = 2.0f;
         p_player.speed = 128.0f;
         p_player.visionRadius = 2.0f * m_nTileWidth;
@@ -400,22 +410,23 @@ protected:
         ///// INPUT/////
         //translation input
         vec2d dir = {0, 0};
-        if (GetKey(olc::Key::W).bHeld)
+        if (GetKey(olc::Key::W).bHeld || GetKey(olc::Key::UP).bHeld)
             dir.y -= 1.0f;
-        if (GetKey(olc::Key::S).bHeld)
+        if (GetKey(olc::Key::S).bHeld || GetKey(olc::Key::DOWN).bHeld)
             dir.y += 1.0f;
-        if (GetKey(olc::Key::A).bHeld)
+        if (GetKey(olc::Key::A).bHeld || GetKey(olc::Key::LEFT).bHeld)
             dir.x -= 1.0f;
-        if (GetKey(olc::Key::D).bHeld)
+        if (GetKey(olc::Key::D).bHeld || GetKey(olc::Key::RIGHT).bHeld)
             dir.x += 1.0f;
         //ready to start
 
-        if (GetKey(olc::Key::R).bPressed)
+        if (GetKey(olc::Key::R).bPressed && !bFreeze)
             bExplore = false;
         ///////////////
 
 
         //// CALCULATION ////
+
         if (!bExplore)
         {
             if (bLight)
@@ -424,15 +435,27 @@ protected:
                 p_player.pos = { ((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.5f) * m_nTileWidth };
             }
         }
+
         //player movement and collision resolution
-        p_player.Move(dir, m_maze, m_nTileWidth, m_nPathWidth, m_nWallWidth, fElapsedTime);
+        if (bFreeze)
+            p_player.counter += fElapsedTime;
+        else
+            p_player.Move(dir, m_maze, m_nTileWidth, m_nPathWidth, m_nWallWidth, fElapsedTime);
+
+        if (p_player.counter >= p_player.freezeTime)
+        {
+            p_player.counter = 0.0f;
+            bFreeze = false;
+        }
+
         if ((int)(p_player.pos.x / (float)m_nTileWidth) == m_maze.finish_x && 
             (int)(p_player.pos.y / (float)m_nTileWidth) == m_maze.finish_y)
         {
             bLight = true;
             bExplore = true;
-            m_maze.GenerateMaze(17, 17);
+            m_maze.GenerateMaze(m_nMazeWidth, m_nMazeHeight);
             p_player.pos = { ((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.5f) * m_nTileWidth };
+            bFreeze = true;
         }
         ///////////////
 
@@ -453,7 +476,7 @@ protected:
 int main()
 {
     MMM demo;
-    if (demo.Construct(640, 640, 1, 1))
+    if (demo.Construct(578, 578, 1, 1, true))
         demo.Start();
 
     return 0;
