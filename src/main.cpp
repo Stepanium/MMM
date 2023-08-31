@@ -22,6 +22,8 @@ struct maze
     int m_nMazeWidth;
     int m_nMazeHeight;
     int *m_nMaze;
+    olc::Pixel floorColor;
+    olc::Pixel wallColor;
 
     void GenerateMaze(int m_nMazeWidth, int m_nMazeHeight)
     {
@@ -116,45 +118,45 @@ struct vec2d
     float x = 0;
     float y = 0;
 
-    vec2d operator + (const vec2d &rhs)
+    vec2d operator+(const vec2d &rhs)
     {
         return {x + rhs.x, y + rhs.y};
     }
 
-    vec2d operator - (const vec2d &rhs)
+    vec2d operator-(const vec2d &rhs)
     {
         return {x - rhs.x, y - rhs.y};
     }
 
-    void operator += (const vec2d &rhs)
+    void operator+=(const vec2d &rhs)
     {
         x += rhs.x;
         y += rhs.y;
     }
 
-    void operator -= (const vec2d &rhs)
+    void operator-=(const vec2d &rhs)
     {
         x -= rhs.x;
         y -= rhs.y;
     }
 
-    vec2d operator * (const float &rhs)
+    vec2d operator*(const float &rhs)
     {
         return {x * rhs, y * rhs};
     }
 
-    vec2d operator / (const float &rhs)
+    vec2d operator/(const float &rhs)
     {
         return {x / rhs, y / rhs};
     }
 
-    void operator *= (const float &rhs)
+    void operator*=(const float &rhs)
     {
         x *= rhs;
         y *= rhs;
     }
 
-    void operator /= (const float &rhs)
+    void operator/=(const float &rhs)
     {
         x /= rhs;
         y /= rhs;
@@ -167,14 +169,20 @@ struct vec2d
 
     float GetLength()
     {
-        return sqrtf(GetLengthSqared());
+        float l2 = GetLengthSqared();
+        float out = sqrtf(l2);
+        return out;
     }
 
-    float Normalize()
+    void Normalize()
     {
-        float reverseL = 1.0f / GetLength();
-        x *= reverseL;
-        y *= reverseL;
+        float l = GetLength();
+        if (l > 0.0f)
+        {
+            float reverseL = 1.0f / l;
+            x *= reverseL;
+            y *= reverseL;
+        }
     }
 
     float DotProduct(const vec2d &rhs)
@@ -192,36 +200,103 @@ struct player
 {
     vec2d pos = {0, 0};
     vec2d dir = {0, 0};
-    float radius = 1;
-    float speed = 8;
+    float radius = 1.0f;
+    float visionRadius = 70.0f;
+    float speed = 16.0f;
 
-    void Move(vec2d direction, maze maze, int m_nTileWidth, int m_nPathWidth, int m_nWallWidth,  float fElapsedTime)
+    olc::Pixel color;
+    olc::Pixel antiColor;
+
+    void Move(vec2d direction, maze maze, int m_nTileWidth, int m_nPathWidth, int m_nWallWidth, float fElapsedTime)
     {
+        if (direction.x == 0.0f && direction.y == 0.0f)
+            return;
+
         direction.Normalize();
         vec2d move = direction * speed * fElapsedTime;
         vec2d nextPos = pos + move;
 
-        /*float reverseTileW = 1.0f / m_nTileWidth;
+        float halfW = 0.5f * m_nWallWidth;
+        bool fixX = false, fixY = false;
 
-        int m_pos_x = (int) (pos.x * reverseTileW);
-        int m_pos_y = (int) (pos.y * reverseTileW);
-        int m_next_x = (int) (nextPos.x * reverseTileW);
-        int m_next_y = (int) (nextPos.y * reverseTileW);*/
-
-        /*//CHECK FOR NORTH PATH
-        if (nextPos.y < m_nWallWidth) //next pos is in map
+        if (nextPos.x < halfW)
         {
-            nextPos.y = (float)m_nWallWidth;
+            nextPos.x = halfW;
+            fixX = true;
         }
-        else if (pos.y > m_nTileWidth && // current pos has at least one north cell
-        m_pos_x != m_next_x && // they are in different cells by y
-        (maze.m_nMaze[m_pos_y * maze.m_nMazeWidth + m_pos_x] & CELL_PATH_EAST == 0)) // is there no path between them?
+        else if (nextPos.x > maze.m_nMazeWidth * m_nTileWidth - halfW)
         {
-            //HANDLE COLLISION
-            nextPos.y = m_pos_y * m_nTileWidth; // next y is at the top of current tile, just below the wall
-        }*/
-        pos.x = nextPos.x;
-        pos.y = nextPos.y;
+            nextPos.x = maze.m_nMazeWidth * m_nTileWidth - halfW;
+            fixX = true;
+        }
+
+        if (nextPos.y < halfW)
+        {
+            nextPos.y = halfW;
+            fixY = true;
+        }
+        else if (nextPos.y > maze.m_nMazeHeight * m_nTileWidth - halfW)
+        {
+            nextPos.y = maze.m_nMazeHeight * m_nTileWidth - halfW;
+            fixY = true;
+        }
+
+        int m_pos_x = (int)(pos.x / m_nTileWidth);
+        int m_pos_y = (int)(pos.y / m_nTileWidth);
+
+        int m_next_x = (int)(nextPos.x / m_nTileWidth);
+        int m_next_y = (int)(nextPos.y / m_nTileWidth);
+
+        // COLLISION DETECTION AND RESOLUTION
+        if (!fixY)
+        {
+            // NORTH
+            if (m_pos_y > m_next_y)
+            {
+                int t = maze.m_nMaze[m_pos_y * maze.m_nMazeWidth + m_pos_x];
+                if (!(t & CELL_PATH_NORTH))
+                {
+                    float bottomY = (float)(m_pos_y * m_nTileWidth) + halfW;
+                    nextPos.y = bottomY;
+                }
+            }
+            // SOUTH
+            else if (m_pos_y < m_next_y)
+            {
+                int t = maze.m_nMaze[m_pos_y * maze.m_nMazeWidth + m_pos_x];
+                if (!(t & CELL_PATH_SOUTH))
+                {
+                    float topY = (float)(m_next_y * m_nTileWidth) - halfW;
+                    nextPos.y = topY;
+                }
+            }
+        }
+
+        if (!fixX)
+        {
+            // EAST
+            if (m_pos_x < m_next_x)
+            {
+                int t = maze.m_nMaze[m_pos_y * maze.m_nMazeWidth + m_pos_x];
+                if (!(t & CELL_PATH_EAST))
+                {
+                    float leftX = (float)(m_next_x * m_nTileWidth) - halfW;
+                    nextPos.x = leftX;
+                }
+            }
+            // WEST
+            else if (m_pos_x > m_next_x)
+            {
+                int t = maze.m_nMaze[m_pos_y * maze.m_nMazeWidth + m_pos_x];
+                if (!(t & CELL_PATH_WEST))
+                {
+                    float rightX = (float)(m_pos_x * m_nTileWidth) + halfW;
+                    nextPos.x = rightX;
+                }
+            }
+        }
+
+        pos = nextPos;
     }
 };
 
@@ -234,6 +309,8 @@ private:
     int m_nWallWidth;
     player p;
 
+    bool light = true;
+
 public:
     MMM()
     {
@@ -243,20 +320,26 @@ public:
 protected:
     bool OnUserCreate() override
     {
-        m_maze.GenerateMaze(32, 32);
-        m_nPathWidth = 7;
-        m_nWallWidth = 1;
+        m_maze.GenerateMaze(16, 16);
+        m_nPathWidth = 32;
+        m_nWallWidth = 2;
         m_nTileWidth = m_nPathWidth + m_nWallWidth;
+        m_maze.wallColor = olc::Pixel(10, 10, 10);
+        m_maze.floorColor = olc::Pixel(240, 160, 0);
 
-        p.pos = {100.0f, 100.0f};
-        p.radius = 5;
+        p.pos = {250.0f, 535.0f};
+        p.radius = 2.0f;
+        p.speed = 128.0f;
+        p.visionRadius = 2.0f * m_nTileWidth;
+        p.color = m_maze.wallColor;
+        p.antiColor = olc::Pixel(255 - p.color.r, 255 - p.color.g, 255 - p.color.b);
 
         return true;
     }
 
     bool OnUserUpdate(float fElapsedTime) override
     {
-        
+
         // INPUT//
         // TRANSLATION//
         vec2d dir = {0, 0};
@@ -273,35 +356,38 @@ protected:
         p.Move(dir, m_maze, m_nTileWidth, m_nPathWidth, m_nWallWidth, fElapsedTime);
 
         // DRAWING//
-        Clear(olc::BLACK);
+        Clear(m_maze.wallColor);
 
-
-        //DRAW MAZE
-        /*for (int x = 0; x < m_maze.m_nMazeWidth; x++)
+        // DRAW MAZE
+        for (int x = 0; x < m_maze.m_nMazeWidth; x++)
         {
             for (int y = 0; y < m_maze.m_nMazeHeight; y++)
             {
-                for (int px = 0; px < m_nPathWidth; px++)
-                    for (int py = 0; py < m_nPathWidth; py++)
-                        if (m_maze.m_nMaze[x + y * m_maze.m_nMazeWidth] & CELL_VISITED)
-                            Draw(m_nWallWidth + x * (m_nPathWidth + 1) + px, m_nWallWidth + y * (m_nPathWidth + 1) + py, olc::WHITE);
-                        else
-                            Draw(m_nWallWidth + x * (m_nPathWidth + 1) + px, m_nWallWidth + y * (m_nPathWidth + 1) + py, olc::BLUE);
-
-                // Draw passageways between cells
-                for (int p = 0; p < m_nPathWidth; p++)
+                int x_transformed = m_nWallWidth + x * m_nTileWidth;
+                int y_transformed = m_nWallWidth + y * m_nTileWidth;
+                vec2d center = {(float)x_transformed + 0.5f * m_nTileWidth, (float)y_transformed + 0.5f * m_nTileWidth};
+                if (light || (p.pos - center).GetLengthSqared() < p.visionRadius * p.visionRadius)
                 {
-                    if (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_PATH_SOUTH)
-                        Draw(m_nWallWidth + x * (m_nPathWidth + 1) + p, m_nWallWidth + y * (m_nPathWidth + 1) + m_nPathWidth); // Draw South Passage
+                    FillRect(x_transformed, y_transformed, m_nPathWidth, m_nPathWidth, m_maze.floorColor);
 
-                    if (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_PATH_EAST)
-                        Draw(m_nWallWidth + x * (m_nPathWidth + 1) + m_nPathWidth, m_nWallWidth + y * (m_nPathWidth + 1) + p); // Draw East Passage
+                    // Draw passageways between cells
+                    for (int p = 0; p < m_nPathWidth; p++)
+                    {
+                        for (int k = 0; k < m_nWallWidth; k++)
+                        {
+                            if (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_PATH_SOUTH)
+                                Draw(x_transformed + p, y_transformed + m_nPathWidth + k, m_maze.floorColor); // Draw South Passage
+
+                            if (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_PATH_EAST)
+                                Draw(x_transformed + m_nPathWidth + k, y_transformed + p, m_maze.floorColor); // Draw East Passage
+                        }
+                    }
                 }
             }
-        }*/
+        }
 
-        //DRAW PLAYER
-        FillCircle((int)p.pos.x, (int)p.pos.y, (int)p.radius, olc::RED);
+        // DRAW PLAYER
+        FillCircle((int)p.pos.x, (int)p.pos.y, (int)p.radius, p.color);
 
         return true;
     }
@@ -310,7 +396,7 @@ protected:
 int main()
 {
     MMM demo;
-    if (demo.Construct(257, 257, 2, 2))
+    if (demo.Construct(600, 600, 1, 1))
         demo.Start();
 
     return 0;
