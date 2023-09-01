@@ -1,12 +1,11 @@
 #define OLC_PGE_APPLICATION
+#include "olcPixelGameEngine.h"
 
 #include <stack>
 
-#include "olcPixelGameEngine.h"
-
 using namespace std;
 
-// g++ -o main main.cpp -lX11 -lGL -lpthread -lpng -lstdc++fs -std=c++17
+// g++ -o main main.cpp -lX11 -lGL -lpthread -lpng -lstdc++fs -std=c++17 -lopenal
 
 enum
 {
@@ -331,7 +330,7 @@ struct camera
     int nHalfScrW;
     int nHalfScrH;
 
-    void Construct(vec2d *target, int nScreenWidth, int nScreenHeight, float zoom, float smooth = 0.95f)
+    void Construct(vec2d *target, int nScreenWidth, int nScreenHeight, float zoom = 1.0f, float smooth = 0.95f)
     {
         this->target = target;
         this->center = *target;
@@ -342,20 +341,14 @@ struct camera
         this->smooth = smooth;
     }
 
-    void Update()
-    {
-        vec2d diff = *target - center;
-        center += diff * smooth;
-        this->origin = {center.x - nHalfScrW / zoom, center.y - nHalfScrH / zoom};
-    }
-
     void Update(float zoom)
     {
-        if (zoom >= 0.0f)
-            this->zoom = zoom;
+        this->zoom = zoom;
+        if (this->zoom < 0.01f)
+            this->zoom = 0.01f;
         vec2d diff = *target - center;
         center += diff * smooth;
-        this->origin = {center.x - nHalfScrW / zoom, center.y - nHalfScrH / zoom};
+        this->origin = {center.x - nHalfScrW / this->zoom, center.y - nHalfScrH / this->zoom};
     }
 
     vec2d Project(vec2d p)
@@ -380,11 +373,20 @@ private:
 
     player p_player;
 
-    bool bLight = true;
-    bool bExplore = true; // is gameplay right now in the explore mode or int the remember and find the exit mode?
-    bool bFreeze = false;
+    bool bLight;
+    bool bInspect; // is gameplay right now in the explore mode or int the remember and find the exit mode?
+    bool bFreeze;
 
     camera c_camera;
+    float zoomNull;   // inspect mode
+    float zoomSearch; // search mode
+
+    olc::Sprite *sprFading;
+    olc::Decal *decFading;
+    float lightScaleNormal;
+    float lightScaleSmall;
+
+    int id_music_bg = 0;
 
     void DrawMaze(maze m_maze, player p_player, bool bLight, camera c_camera)
     {
@@ -397,16 +399,25 @@ private:
                 int x_transformed = m_nWallWidth + x * m_nTileWidth;
                 int y_transformed = m_nWallWidth + y * m_nTileWidth;
                 vec2d center = {(float)x_transformed + 0.5f * m_nTileWidth, (float)y_transformed + 0.5f * m_nTileWidth};
-                if (bLight || x_transformed > ScreenWidth() || y_transformed > ScreenHeight() || (p_player.pos - center).GetLengthSqared() < p_player.visionRadius * p_player.visionRadius)
+
+                vec2d topLeft_projected = c_camera.Project({(float)x_transformed, (float)y_transformed});
+                float newPathW = (float)m_nPathWidth * c_camera.zoom;
+                float newWallW = (float)m_nWallWidth * c_camera.zoom;
+                float newTileW = newPathW + newWallW;
+
+                float r_vision2 = p_player.visionRadius * p_player.visionRadius;
+                float distance2 = (p_player.pos - center).GetLengthSqared();
+
+                if (topLeft_projected.x > -newTileW && topLeft_projected.y > -newTileW &&
+                    topLeft_projected.x < ScreenWidth() && topLeft_projected.y < ScreenHeight() &&
+                    (bLight || (distance2 < r_vision2)))
                 {
-                    vec2d topLeft_projected = c_camera.Project({ (float)x_transformed, (float)y_transformed });
-                    int newPathW = (int)((float)m_nPathWidth * c_camera.zoom);
                     FillRect(topLeft_projected.x, topLeft_projected.y, newPathW, newPathW, color);
 
                     // Draw passageways between cells
-                    for (int p = 0; p < newPathW; p++)
+                    for (float p = 0.0f; p < newPathW; p++)
                     {
-                        for (int k = 0; k < newPathW; k++)
+                        for (float k = 0.0f; k < newPathW; k++)
                         {
                             if (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_PATH_SOUTH)
                                 Draw(topLeft_projected.x + p, topLeft_projected.y + newPathW + k, color); // Draw South Passage
@@ -420,45 +431,82 @@ private:
         }
     }
 
-    void DrawPlayer(player p, camera c_camera)
+    void DrawPlayer(player p, camera c_camera, olc::Decal *decFading, vec2d spriteScale)
     {
         vec2d p_pos_projected = c_camera.Project(p.pos);
         float p_r_projected = p.radius * c_camera.zoom;
-        if (p_pos_projected.x >= 0 && p_pos_projected.x < ScreenWidth() && 
+        if (p_pos_projected.x >= 0 && p_pos_projected.x < ScreenWidth() &&
             p_pos_projected.y >= 0 && p_pos_projected.y < ScreenHeight())
-            FillCircle((int)p_pos_projected.x, (int)p_pos_projected.y, (int)p_r_projected, p.color);
+        {
+            FillCircle(p_pos_projected.x, p_pos_projected.y, p_r_projected, p.color);
+            DrawCircle(p_pos_projected.x, p_pos_projected.y, p_r_projected, olc::WHITE);
+        }
+
+        if (!bLight)
+        {
+            // Width and hight of the sprite relative in screen space
+            float darkW = spriteScale.x * (float)ScreenWidth();
+            float darkH = spriteScale.y * (float)ScreenHeight();
+
+            // top left of sprite in screen space
+            vec2d origin = {c_camera.center.x - darkW * 0.5f, c_camera.center.y - darkH * 0.5f};
+
+            // top left of sprite in camera space
+            vec2d origin_projected = c_camera.Project(origin);
+
+            // sprite width and height in camera space
+            vec2d scale = {darkW / decFading->sprite->width * c_camera.zoom, darkH / decFading->sprite->height * c_camera.zoom};
+
+            DrawDecal({origin_projected.x, origin_projected.y}, decFading, {scale.x, scale.y});
+        }
     }
 
 public:
     MMM()
     {
         sAppName = "Memory Maze Man!";
+        // EnableSound();
     }
 
 protected:
     bool OnUserCreate() override
     {
-        m_nMazeWidth = 18;
-        m_nMazeHeight = 18;
+        m_nMazeWidth = 9;
+        m_nMazeHeight = 9;
         m_maze.GenerateMaze(m_nMazeWidth, m_nMazeHeight);
+
         m_nPathWidth = 30;
         m_nWallWidth = 2;
         m_nTileWidth = m_nPathWidth + m_nWallWidth;
-        m_maze.wallColor = olc::Pixel(10, 10, 10);
-        m_maze.floorColor = olc::Pixel(240, 160, 0);
-        m_maze.wallColor = olc::Pixel(10, 10, 10);
 
-        m_maze.startColor = olc::GREEN;
-        m_maze.finishColor = olc::RED;
+        m_maze.wallColor = olc::Pixel(10, 10, 10);
+        m_maze.floorColor = olc::Pixel(100, 20, 100);
+        m_maze.wallColor = olc::Pixel(10, 10, 10);
+        m_maze.startColor = olc::WHITE;
+        m_maze.finishColor = olc::WHITE;
 
         p_player.pos = {((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.25f) * m_nTileWidth};
         p_player.radius = 2.0f;
         p_player.speed = 160.0f;
-        p_player.visionRadius = 2.0f * m_nTileWidth;
         p_player.color = m_maze.wallColor;
-        // p_player.antiColor = olc::Pixel(255 - p_player.color.r, 255 - p_player.color.g, 255 - p_player.color.b);
 
-        c_camera.Construct(&p_player.pos, ScreenWidth(), ScreenHeight(), 2.0f, 0.5f);
+        zoomNull = 1.0f;
+        zoomSearch = 2.0f;
+        c_camera.Construct(&p_player.pos, ScreenWidth(), ScreenHeight(), zoomNull, 0.5f);
+
+        sprFading = new olc::Sprite("../assets/light_cast.png");
+        decFading = new olc::Decal(sprFading);
+        lightScaleNormal = 0.5f;
+        lightScaleSmall = 0.3f;
+        p_player.visionRadius = lightScaleSmall * (float)ScreenWidth() * 0.5f;
+
+        bLight = true;
+        bInspect = true;
+        bFreeze = false;
+
+        // id_music_bg = olc::SOUND::LoadAudioSample("../assets/MMM_OST_v0.wav");
+        // olc::SOUND::PlaySample(id_music_bg, true);
+
         return true;
     }
 
@@ -478,17 +526,41 @@ protected:
         // ready to start
 
         if (GetKey(olc::Key::R).bPressed && !bFreeze)
-            bExplore = false;
+            bInspect = false;
+
+        // float dZoom = 0.0f;
+        /*if (GetKey(olc::Key::EQUALS).bHeld)
+            dZoom += 1.0f * fElapsedTime;
+        if (GetKey(olc::Key::MINUS).bHeld)
+            dZoom -= 1.0f * fElapsedTime;*/
         ///////////////
 
         //// CALCULATION ////
 
-        if (!bExplore)
+        float zoom;
+        if (bInspect)
         {
+            zoom = zoomNull;
+        }
+        else
+        {
+            zoom = zoomSearch;
             if (bLight)
             {
                 bLight = false;
                 p_player.pos = {((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.5f) * m_nTileWidth};
+            }
+
+            if ((int)(p_player.pos.x / (float)m_nTileWidth) == m_maze.finish_x &&
+                (int)(p_player.pos.y / (float)m_nTileWidth) == m_maze.finish_y)
+            {
+                bLight = true;
+                bInspect = true;
+                m_nMazeWidth += 2;
+                m_nMazeHeight += 2;
+                m_maze.GenerateMaze(m_nMazeWidth, m_nMazeHeight);
+                p_player.pos = {((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.5f) * m_nTileWidth};
+                bFreeze = true;
             }
         }
 
@@ -504,17 +576,7 @@ protected:
             bFreeze = false;
         }
 
-        if ((int)(p_player.pos.x / (float)m_nTileWidth) == m_maze.finish_x &&
-            (int)(p_player.pos.y / (float)m_nTileWidth) == m_maze.finish_y)
-        {
-            bLight = true;
-            bExplore = true;
-            m_maze.GenerateMaze(m_nMazeWidth, m_nMazeHeight);
-            p_player.pos = {((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.5f) * m_nTileWidth};
-            bFreeze = true;
-        }
-
-        c_camera.Update();
+        c_camera.Update(zoom);
         ///////////////
 
         ////DRAWING////
@@ -523,7 +585,13 @@ protected:
         // draw maze
         DrawMaze(m_maze, p_player, bLight, c_camera);
         // draw player
-        DrawPlayer(p_player, c_camera);
+        float lightScale = (bLight) ? lightScaleNormal : lightScaleSmall;
+        if (GetKey(olc::Key::EQUALS).bHeld)
+            lightScale += 1.0f * fElapsedTime;
+        if (GetKey(olc::Key::MINUS).bHeld)
+            lightScale -= 1.0f * fElapsedTime;
+
+        DrawPlayer(p_player, c_camera, decFading, {lightScale, lightScale});
         ////////////////
 
         return true;
@@ -532,6 +600,9 @@ protected:
 
 int main()
 {
+    // Seed random number generator
+    srand(clock());
+
     MMM demo;
     if (demo.Construct(578, 578, 1, 1, false))
         demo.Start();
