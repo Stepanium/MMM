@@ -319,6 +319,54 @@ struct player
     }
 };
 
+struct camera
+{
+    vec2d origin;
+    vec2d center;
+    float zoom;
+
+    float smooth = 0.95f; // how smooth is the movement?
+    vec2d *target = nullptr;
+
+    int nHalfScrW;
+    int nHalfScrH;
+
+    void Construct(vec2d *target, int nScreenWidth, int nScreenHeight, float zoom, float smooth = 0.95f)
+    {
+        this->target = target;
+        this->center = *target;
+        nHalfScrW = nScreenWidth * 0.5f;
+        nHalfScrH = nScreenHeight * 0.5f;
+        this->origin = {center.x - nHalfScrW / zoom, center.y - nHalfScrH / zoom};
+        this->zoom = zoom;
+        this->smooth = smooth;
+    }
+
+    void Update()
+    {
+        vec2d diff = *target - center;
+        center += diff * smooth;
+        this->origin = {center.x - nHalfScrW / zoom, center.y - nHalfScrH / zoom};
+    }
+
+    void Update(float zoom)
+    {
+        if (zoom >= 0.0f)
+            this->zoom = zoom;
+        vec2d diff = *target - center;
+        center += diff * smooth;
+        this->origin = {center.x - nHalfScrW / zoom, center.y - nHalfScrH / zoom};
+    }
+
+    vec2d Project(vec2d p)
+    {
+        vec2d p_projected = p;
+        p_projected -= origin;
+        p_projected *= zoom;
+        return p_projected;
+    }
+};
+
 class MMM : public olc::PixelGameEngine
 {
 private:
@@ -333,34 +381,38 @@ private:
     player p_player;
 
     bool bLight = true;
-    bool bExplore = true; //is gameplay right now in the explore mode or int the remember and find the exit mode?
+    bool bExplore = true; // is gameplay right now in the explore mode or int the remember and find the exit mode?
     bool bFreeze = false;
 
+    camera c_camera;
 
-    void DrawMaze(maze m_maze, player p_player, bool bLight)
+    void DrawMaze(maze m_maze, player p_player, bool bLight, camera c_camera)
     {
         for (int x = 0; x < m_maze.m_nMazeWidth; x++)
         {
             for (int y = 0; y < m_maze.m_nMazeHeight; y++)
             {
-                olc::Pixel color = (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_START) ? m_maze.startColor : (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_FINISH) ? m_maze.finishColor :  m_maze.floorColor;
+                olc::Pixel color = (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_START) ? m_maze.startColor : (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_FINISH) ? m_maze.finishColor
+                                                                                                                                                                                : m_maze.floorColor;
                 int x_transformed = m_nWallWidth + x * m_nTileWidth;
                 int y_transformed = m_nWallWidth + y * m_nTileWidth;
                 vec2d center = {(float)x_transformed + 0.5f * m_nTileWidth, (float)y_transformed + 0.5f * m_nTileWidth};
                 if (bLight || x_transformed > ScreenWidth() || y_transformed > ScreenHeight() || (p_player.pos - center).GetLengthSqared() < p_player.visionRadius * p_player.visionRadius)
                 {
-                    FillRect(x_transformed, y_transformed, m_nPathWidth, m_nPathWidth, color);
+                    vec2d topLeft_projected = c_camera.Project({ (float)x_transformed, (float)y_transformed });
+                    int newPathW = (int)((float)m_nPathWidth * c_camera.zoom);
+                    FillRect(topLeft_projected.x, topLeft_projected.y, newPathW, newPathW, color);
 
                     // Draw passageways between cells
-                    for (int p = 0; p < m_nPathWidth; p++)
+                    for (int p = 0; p < newPathW; p++)
                     {
-                        for (int k = 0; k < m_nWallWidth; k++)
+                        for (int k = 0; k < newPathW; k++)
                         {
                             if (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_PATH_SOUTH)
-                                Draw(x_transformed + p, y_transformed + m_nPathWidth + k, color); // Draw South Passage
+                                Draw(topLeft_projected.x + p, topLeft_projected.y + newPathW + k, color); // Draw South Passage
 
                             if (m_maze.m_nMaze[y * m_maze.m_nMazeWidth + x] & CELL_PATH_EAST)
-                                Draw(x_transformed + m_nPathWidth + k, y_transformed + p, color); // Draw East Passage
+                                Draw(topLeft_projected.x + newPathW + k, topLeft_projected.y + p, color); // Draw East Passage
                         }
                     }
                 }
@@ -368,9 +420,13 @@ private:
         }
     }
 
-    void DrawPlayer(player p)
+    void DrawPlayer(player p, camera c_camera)
     {
-        FillCircle((int)p.pos.x, (int)p.pos.y, (int)p.radius, p.color);
+        vec2d p_pos_projected = c_camera.Project(p.pos);
+        float p_r_projected = p.radius * c_camera.zoom;
+        if (p_pos_projected.x >= 0 && p_pos_projected.x < ScreenWidth() && 
+            p_pos_projected.y >= 0 && p_pos_projected.y < ScreenHeight())
+            FillCircle((int)p_pos_projected.x, (int)p_pos_projected.y, (int)p_r_projected, p.color);
     }
 
 public:
@@ -395,20 +451,21 @@ protected:
         m_maze.startColor = olc::GREEN;
         m_maze.finishColor = olc::RED;
 
-        p_player.pos = { (float)(m_maze.m_nMazeWidth + 1) * 0.5f * m_nTileWidth, ((float)m_maze.m_nMazeWidth - 0.5f) * m_nTileWidth };
+        p_player.pos = {((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.25f) * m_nTileWidth};
         p_player.radius = 2.0f;
-        p_player.speed = 128.0f;
+        p_player.speed = 160.0f;
         p_player.visionRadius = 2.0f * m_nTileWidth;
         p_player.color = m_maze.wallColor;
         // p_player.antiColor = olc::Pixel(255 - p_player.color.r, 255 - p_player.color.g, 255 - p_player.color.b);
 
+        c_camera.Construct(&p_player.pos, ScreenWidth(), ScreenHeight(), 2.0f, 0.5f);
         return true;
     }
 
     bool OnUserUpdate(float fElapsedTime) override
     {
         ///// INPUT/////
-        //translation input
+        // translation input
         vec2d dir = {0, 0};
         if (GetKey(olc::Key::W).bHeld || GetKey(olc::Key::UP).bHeld)
             dir.y -= 1.0f;
@@ -418,12 +475,11 @@ protected:
             dir.x -= 1.0f;
         if (GetKey(olc::Key::D).bHeld || GetKey(olc::Key::RIGHT).bHeld)
             dir.x += 1.0f;
-        //ready to start
+        // ready to start
 
         if (GetKey(olc::Key::R).bPressed && !bFreeze)
             bExplore = false;
         ///////////////
-
 
         //// CALCULATION ////
 
@@ -432,11 +488,11 @@ protected:
             if (bLight)
             {
                 bLight = false;
-                p_player.pos = { ((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.5f) * m_nTileWidth };
+                p_player.pos = {((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.5f) * m_nTileWidth};
             }
         }
 
-        //player movement and collision resolution
+        // player movement and collision resolution
         if (bFreeze)
             p_player.counter += fElapsedTime;
         else
@@ -448,25 +504,26 @@ protected:
             bFreeze = false;
         }
 
-        if ((int)(p_player.pos.x / (float)m_nTileWidth) == m_maze.finish_x && 
+        if ((int)(p_player.pos.x / (float)m_nTileWidth) == m_maze.finish_x &&
             (int)(p_player.pos.y / (float)m_nTileWidth) == m_maze.finish_y)
         {
             bLight = true;
             bExplore = true;
             m_maze.GenerateMaze(m_nMazeWidth, m_nMazeHeight);
-            p_player.pos = { ((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.5f) * m_nTileWidth };
+            p_player.pos = {((float)m_maze.start_x + 0.5f) * m_nTileWidth, ((float)m_maze.start_y + 0.5f) * m_nTileWidth};
             bFreeze = true;
         }
-        ///////////////
 
+        c_camera.Update();
+        ///////////////
 
         ////DRAWING////
         Clear(m_maze.wallColor);
 
-        //draw maze
-        DrawMaze(m_maze, p_player, bLight);
-        //draw player
-        DrawPlayer(p_player);
+        // draw maze
+        DrawMaze(m_maze, p_player, bLight, c_camera);
+        // draw player
+        DrawPlayer(p_player, c_camera);
         ////////////////
 
         return true;
@@ -476,7 +533,7 @@ protected:
 int main()
 {
     MMM demo;
-    if (demo.Construct(578, 578, 1, 1, true))
+    if (demo.Construct(578, 578, 1, 1, false))
         demo.Start();
 
     return 0;
