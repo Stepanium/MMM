@@ -1,11 +1,15 @@
 #define OLC_PGE_APPLICATION
 #include "olcPixelGameEngine.h"
 
+
+#define OLC_SOUNDWAVE
+#include "olcSoundWaveEngine.h"
+
 #include <stack>
 
 using namespace std;
 
-// g++ -o main main.cpp -lX11 -lGL -lpthread -lpng -lstdc++fs -std=c++17 -lopenal
+// g++ -o main main.cpp -lX11 -lGL -lpthread -lpng -lstdc++fs -std=c++17 -lpulse -lpulse-simple
 
 enum
 {
@@ -386,7 +390,11 @@ private:
     float lightScaleNormal;
     float lightScaleSmall;
 
-    int id_music_bg = 0;
+    // Sound Specific
+	olc::sound::WaveEngine engine;
+
+	olc::sound::Wave bg_music_memorize;
+	olc::sound::Wave bg_music_search;
 
     void DrawMaze(maze m_maze, player p_player, bool bLight, camera c_camera)
     {
@@ -433,7 +441,33 @@ private:
 
     void DrawPlayer(player p, camera c_camera, olc::Decal *decFading, vec2d spriteScale)
     {
-        vec2d p_pos_projected = c_camera.Project(p.pos);
+
+        vec2d p_draw_pos = p.pos;
+/*
+        // player pos in maze space m_nMazeWidth x m_nMazeHeight 
+        vec2d p_maze_space = { p.pos.x / m_nTileWidth, p.pos.y / m_nTileWidth };
+
+        // closest corner of the cell
+        vec2d closestCorner = { roundf(p_maze_space.x), roundf(p_maze_space.y) };
+        if (m_maze[closestCorner.y * m_nMazeWidth + closestCorner.x] & CELL_PATH_EAST)
+
+        vec2d offset = (closestCorner - p_maze_space) * m_nTileWidth;
+
+        int sign = (offset.x) ? 1 : -1;
+        if (abs(offset.x) < p.radius + m_nWallWidth * 0.5f)
+        {
+            offset.x = -sign * (p.radius + m_nWallWidth * 0.5f);
+            p_draw_pos.x = closestCorner.x * m_nTileWidth + offset.x;
+        }
+
+        sign = (offset.y) ? 1 : -1;
+        if (abs(offset.y) < p.radius + m_nWallWidth * 0.5f)
+        {
+            offset.y = -sign * (p.radius + m_nWallWidth * 0.5f);
+            p_draw_pos.y = closestCorner.y * m_nTileWidth + offset.y;
+        }*/
+        
+        vec2d p_pos_projected = c_camera.Project(p_draw_pos);
         float p_r_projected = p.radius * c_camera.zoom;
         if (p_pos_projected.x >= 0 && p_pos_projected.x < ScreenWidth() &&
             p_pos_projected.y >= 0 && p_pos_projected.y < ScreenHeight())
@@ -465,7 +499,6 @@ public:
     MMM()
     {
         sAppName = "Memory Maze Man!";
-        // EnableSound();
     }
 
 protected:
@@ -479,9 +512,8 @@ protected:
         m_nWallWidth = 2;
         m_nTileWidth = m_nPathWidth + m_nWallWidth;
 
-        m_maze.wallColor = olc::Pixel(10, 10, 10);
+        m_maze.wallColor = olc::BLACK; // olc::Pixel(10, 10, 10);
         m_maze.floorColor = olc::Pixel(100, 20, 100);
-        m_maze.wallColor = olc::Pixel(10, 10, 10);
         m_maze.startColor = olc::WHITE;
         m_maze.finishColor = olc::WHITE;
 
@@ -504,8 +536,11 @@ protected:
         bInspect = true;
         bFreeze = false;
 
-        // id_music_bg = olc::SOUND::LoadAudioSample("../assets/MMM_OST_v0.wav");
-        // olc::SOUND::PlaySample(id_music_bg, true);
+        bg_music_search.LoadAudioWaveform("../assets/MMM_OST_v0.wav");	
+		engine.InitialiseAudio(44100,2);
+        engine.SetOutputVolume(0.8f);
+
+        engine.PlayWaveform(&bg_music_search);
 
         return true;
     }
